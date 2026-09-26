@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { pickInteger, pickLetter, validateRange } from './picker'
+import {
+  pickAvailablePair,
+  pickInteger,
+  pickLetter,
+  remainingCombinationCount,
+  validateLetterRange,
+  validateRange,
+} from './picker'
 
 describe('validateRange', () => {
   it('accepts safe closed integer ranges', () => {
@@ -41,6 +48,85 @@ describe('picks', () => {
     const sampler = () => samples[calls++]
 
     expect(pickInteger(10, 19, sampler)).toBe(10)
+    expect(calls).toBe(2)
+  })
+})
+
+describe('letter ranges and available pairs', () => {
+  it('accepts closed alphabet ranges and rejects invalid endpoints', () => {
+    expect(validateLetterRange('A', 'Z')).toMatchObject({ ok: true })
+    expect(validateLetterRange('A', 'A')).toMatchObject({ ok: true })
+    expect(validateLetterRange('Z', 'A')).toMatchObject({ ok: false })
+    expect(validateLetterRange('a', 'Z')).toMatchObject({ ok: false })
+    expect(validateLetterRange('A', 'AA')).toMatchObject({ ok: false })
+  })
+
+  it('counts only unique used pairs that fall inside both ranges', () => {
+    expect(remainingCombinationCount({ start: 'A', end: 'B' }, { min: 1, max: 2 }, [])).toBe(4n)
+    expect(remainingCombinationCount({ start: 'A', end: 'B' }, { min: 1, max: 2 }, [{ letter: 'A', number: 1 }])).toBe(3n)
+    expect(remainingCombinationCount({ start: 'A', end: 'A' }, { min: 1, max: 1 }, [{ letter: 'A', number: 1 }])).toBe(0n)
+    expect(remainingCombinationCount(
+      { start: 'A', end: 'A' },
+      { min: 1, max: 1 },
+      [{ letter: 'A', number: 1 }, { letter: 'A', number: 1 }, { letter: 'B', number: 1 }],
+    )).toBe(0n)
+    expect(remainingCombinationCount(
+      { start: 'A', end: 'A' },
+      { min: 1, max: 2 },
+      [{ letter: 'B', number: 1 }],
+    )).toBe(2n)
+    expect(remainingCombinationCount(
+      { start: 'A', end: 'B' },
+      { min: 1, max: 2 },
+      [{ letter: 'B', number: 1 }],
+    )).toBe(3n)
+  })
+
+  it('supports totals larger than Number.MAX_SAFE_INTEGER without materializing pairs', () => {
+    expect(remainingCombinationCount(
+      { start: 'A', end: 'Z' },
+      { min: 1, max: Number.MAX_SAFE_INTEGER },
+      [],
+    )).toBeGreaterThan(BigInt(Number.MAX_SAFE_INTEGER))
+  })
+
+  it('maps a rank to an unused pair and does not sample an exhausted range', () => {
+    expect(pickAvailablePair(
+      { start: 'A', end: 'A' },
+      { min: 1, max: 2 },
+      [{ letter: 'A', number: 1 }],
+      () => 0n,
+    )).toEqual({ letter: 'A', number: 2 })
+
+    let calls = 0
+    expect(pickAvailablePair(
+      { start: 'A', end: 'A' },
+      { min: 1, max: 1 },
+      [{ letter: 'A', number: 1 }],
+      () => { calls++; return 0n },
+    )).toBeNull()
+    expect(calls).toBe(0)
+  })
+
+  it('maps the highest available rank to the final unused grid position', () => {
+    expect(pickAvailablePair(
+      { start: 'A', end: 'B' },
+      { min: 1, max: 2 },
+      [{ letter: 'A', number: 1 }],
+      () => 2n,
+    )).toEqual({ letter: 'B', number: 2 })
+  })
+
+  it('rejects a 64-bit sample in the modulo bias tail before selecting a pair', () => {
+    const samples = [2n ** 64n - 1n, 2n]
+    let calls = 0
+
+    expect(pickAvailablePair(
+      { start: 'A', end: 'A' },
+      { min: 1, max: 3 },
+      [],
+      () => samples[calls++],
+    )).toEqual({ letter: 'A', number: 3 })
     expect(calls).toBe(2)
   })
 })

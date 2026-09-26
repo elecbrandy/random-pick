@@ -1,110 +1,123 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountPickerApp } from './app'
-import { pickInteger, pickLetter } from './picker'
 
-vi.mock('./picker', () => ({
-  validateRange: vi.fn((minText: string, maxText: string) => {
-    if (!/^[+-]?\d+$/.test(minText.trim())) {
-      return { ok: false, field: 'min', message: '최솟값에 안전한 정수를 입력하세요.' }
-    }
-    if (!/^[+-]?\d+$/.test(maxText.trim())) {
-      return { ok: false, field: 'max', message: '최댓값에 안전한 정수를 입력하세요.' }
-    }
-    const min = Number(minText)
-    const max = Number(maxText)
-    if (min > max) return { ok: false, field: 'range', message: '최솟값은 최댓값보다 클 수 없습니다.' }
-    return { ok: true, range: { min, max } }
-  }),
-  pickInteger: vi.fn(() => 42),
-  pickLetter: vi.fn(() => 'M'),
-}))
+function submit() {
+  document.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+}
 
-const mockedPickInteger = vi.mocked(pickInteger)
-const mockedPickLetter = vi.mocked(pickLetter)
+function setRange(letterStart: string, letterEnd: string, min: string, max: string) {
+  document.querySelector<HTMLSelectElement>('#letter-start')!.value = letterStart
+  document.querySelector<HTMLSelectElement>('#letter-end')!.value = letterEnd
+  document.querySelector<HTMLInputElement>('#min')!.value = min
+  document.querySelector<HTMLInputElement>('#max')!.value = max
+}
 
-function submit(form: HTMLFormElement) {
-  form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+function change(selector: string) {
+  document.querySelector(selector)!.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
 describe('mountPickerApp', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    vi.clearAllMocks()
     document.body.innerHTML = '<main id="app"></main>'
-    window.matchMedia = vi.fn().mockReturnValue({ matches: false })
+    window.sessionStorage.clear()
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true })
   })
 
-  it('shows question marks and the default range on first render', () => {
+  it('renders default alphabet and number range controls', () => {
     mountPickerApp(document.querySelector<HTMLElement>('#app')!)
+    expect(document.querySelector<HTMLSelectElement>('#letter-start')?.value).toBe('A')
+    expect(document.querySelector<HTMLSelectElement>('#letter-end')?.value).toBe('Z')
+    expect(document.querySelector<HTMLInputElement>('#min')?.value).toBe('1')
+    expect(document.querySelector<HTMLInputElement>('#max')?.value).toBe('100')
+    expect(document.querySelector('[data-history-count]')?.textContent).toContain('0')
+  })
 
-    const letterResult = document.querySelector<HTMLElement>('[data-result="letter"]')!
-    const numberResult = document.querySelector<HTMLElement>('[data-result="number"]')!
-    expect(letterResult.textContent).toBe('?')
-    expect(numberResult.textContent).toBe('?')
-    expect(letterResult.tagName).toBe('SPAN')
-    expect(letterResult.getAttribute('aria-hidden')).toBeNull()
-    expect(letterResult.getAttribute('aria-live')).toBeNull()
+  it('blocks reversed alphabet range with an input-adjacent error', () => {
+    mountPickerApp(document.querySelector<HTMLElement>('#app')!)
+    setRange('Z', 'A', '1', '2')
+    submit()
+    expect(document.querySelector('#letter-range-error')?.textContent).toContain('알파벳 시작')
+    expect(document.querySelector('[data-history-list]')?.children).toHaveLength(0)
+  })
+
+  it('adds final results newest first and never repeats a pair', () => {
+    mountPickerApp(document.querySelector<HTMLElement>('#app')!)
+    setRange('A', 'A', '1', '2')
+    submit()
+    submit()
+    const history = Array.from(document.querySelectorAll('[data-history-list] li')).map((item) => item.textContent)
+    expect(history).toHaveLength(2)
+    expect(new Set(history).size).toBe(2)
+    expect(history).toEqual(expect.arrayContaining(['A · 1', 'A · 2']))
+  })
+
+  it('disables an exhausted one-pair range and enables a changed range while excluding old pairs', () => {
+    mountPickerApp(document.querySelector<HTMLElement>('#app')!)
+    setRange('A', 'A', '1', '1')
+    submit()
+    expect(document.querySelector<HTMLButtonElement>('button')?.disabled).toBe(true)
+    expect(document.querySelector('[data-exhausted]')?.textContent).toContain('소진')
+    document.querySelector<HTMLInputElement>('#max')!.value = '2'
+    change('#max')
+    expect(document.querySelector<HTMLButtonElement>('button')?.disabled).toBe(false)
+    submit()
+    expect(document.querySelector('[data-history-list]')?.firstElementChild?.textContent).toBe('A · 2')
+  })
+
+  it('restores history and latest result while resetting ranges after remount', () => {
+    const root = document.querySelector<HTMLElement>('#app')!
+    mountPickerApp(root)
+    setRange('C', 'C', '7', '7')
+    submit()
+    mountPickerApp(root)
+    expect(document.querySelector('[data-history-list]')?.firstElementChild?.textContent).toBe('C · 7')
+    expect(document.querySelector('[data-result="letter"]')?.textContent).toBe('C')
+    expect(document.querySelector('[data-result="number"]')?.textContent).toBe('7')
     expect(document.querySelector<HTMLInputElement>('#min')?.value).toBe('1')
     expect(document.querySelector<HTMLInputElement>('#max')?.value).toBe('100')
   })
 
-  it('shows a visible error and does not draw when a boundary is blank', () => {
+  it('shows a persistence notice after a storage write failure while keeping the result', () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
     mountPickerApp(document.querySelector<HTMLElement>('#app')!)
-    const form = document.querySelector<HTMLFormElement>('form')!
-    document.querySelector<HTMLInputElement>('#min')!.value = ''
-
-    submit(form)
-
-    expect(document.querySelector('#min-error')?.textContent).toContain('안전한 정수')
-    expect(mockedPickInteger).not.toHaveBeenCalled()
+    setRange('A', 'A', '1', '1')
+    submit()
+    expect(document.querySelector('[data-history-list]')?.firstElementChild?.textContent).toBe('A · 1')
+    expect(document.querySelector('[data-storage-notice]')?.textContent).toContain('새로고침')
+    setItem.mockRestore()
   })
 
-  it('locks controls, ignores a second submit, and reveals both results together', () => {
+  it('finalizes immediately when reduced motion is preferred', () => {
     mountPickerApp(document.querySelector<HTMLElement>('#app')!)
-    const form = document.querySelector<HTMLFormElement>('form')!
-    const controls = Array.from(form.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button'))
+    setRange('A', 'A', '1', '1')
+    submit()
+    expect(document.querySelector('[data-result="letter"]')?.textContent).toBe('A')
+    expect(document.querySelector('[data-result="number"]')?.textContent).toBe('1')
+  })
 
-    submit(form)
-    expect(controls.every((control) => control.disabled)).toBe(true)
-    expect(mockedPickInteger).toHaveBeenCalledTimes(1)
-
-    submit(form)
-    expect(mockedPickInteger).toHaveBeenCalledTimes(1)
-
+  it('locks range controls during animation and restores them after finalizing', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: false })
+    mountPickerApp(document.querySelector<HTMLElement>('#app')!)
+    setRange('A', 'A', '1', '1')
+    submit()
+    expect(Array.from(document.querySelectorAll('input, select, button')).every((control) => (control as HTMLInputElement).disabled)).toBe(true)
     vi.advanceTimersByTime(1500)
-    expect(document.querySelector('[data-result="letter"]')?.textContent).toBe('M')
-    expect(document.querySelector('[data-result="number"]')?.textContent).toBe('42')
-    expect(controls.every((control) => !control.disabled)).toBe(true)
+    expect(Array.from(document.querySelectorAll('input, select')).every((control) => !(control as HTMLInputElement).disabled)).toBe(true)
   })
 
-  it('shows final results immediately without timers when reduced motion is preferred', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true })
+  it('spins only within the selected letters and ignores a second submit until finalization', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: false })
     mountPickerApp(document.querySelector<HTMLElement>('#app')!)
+    setRange('A', 'A', '1', '2')
+    submit()
+    submit()
 
-    submit(document.querySelector<HTMLFormElement>('form')!)
+    vi.advanceTimersByTime(75)
+    expect(document.querySelector('[data-result="letter"]')?.textContent).toBe('A')
+    expect(document.querySelectorAll('[data-history-list] li')).toHaveLength(0)
 
-    expect(document.querySelector('[data-result="letter"]')?.textContent).toBe('M')
-    expect(document.querySelector('[data-result="number"]')?.textContent).toBe('42')
-    expect(vi.getTimerCount()).toBe(0)
-  })
-
-  it('marks a long final number for compact rendering inside its card', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true })
-    mockedPickInteger.mockReturnValueOnce(9007199254740991)
-    mountPickerApp(document.querySelector<HTMLElement>('#app')!)
-
-    submit(document.querySelector<HTMLFormElement>('form')!)
-
-    expect(document.querySelector('[data-result="number"]')?.classList.contains('result-value--long')).toBe(true)
-  })
-
-  it('marks five-digit final numbers for responsive card sizing', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true })
-    mockedPickInteger.mockReturnValueOnce(12345)
-    mountPickerApp(document.querySelector<HTMLElement>('#app')!)
-
-    submit(document.querySelector<HTMLFormElement>('form')!)
-
-    expect(document.querySelector('[data-result="number"]')?.classList.contains('result-value--medium')).toBe(true)
+    vi.advanceTimersByTime(1425)
+    expect(document.querySelectorAll('[data-history-list] li')).toHaveLength(1)
   })
 })

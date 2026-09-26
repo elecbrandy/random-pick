@@ -1,4 +1,9 @@
 export type Range = { min: number; max: number }
+export type Draw = { letter: string; number: number }
+export type LetterRange = { start: string; end: string }
+export type LetterRangeValidation =
+  | { ok: true; range: LetterRange }
+  | { ok: false; message: string }
 
 export type RangeValidation =
   | { ok: true; range: Range }
@@ -7,6 +12,9 @@ export type RangeValidation =
 const INTEGER_TEXT = /^[+-]?\d+$/
 const MAX_SAMPLE = 2n ** 53n
 const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER)
+const MAX_SAMPLE_64 = 2n ** 64n
+const FIRST_LETTER_CODE = 'A'.charCodeAt(0)
+const LAST_LETTER_CODE = 'Z'.charCodeAt(0)
 
 function parseSafeInteger(text: string): number | undefined {
   const trimmed = text.trim()
@@ -37,6 +45,94 @@ export function validateRange(minText: string, maxText: string): RangeValidation
   }
 
   return { ok: true, range: { min, max } }
+}
+
+export function validateLetterRange(start: string, end: string): LetterRangeValidation {
+  if (!isUppercaseLetter(start) || !isUppercaseLetter(end)) {
+    return { ok: false, message: '알파벳 범위는 A부터 Z 사이에서 선택하세요.' }
+  }
+
+  if (start > end) {
+    return { ok: false, message: '알파벳 시작은 끝보다 뒤일 수 없습니다.' }
+  }
+
+  return { ok: true, range: { start, end } }
+}
+
+function isUppercaseLetter(value: string): boolean {
+  return value.length === 1 && value.charCodeAt(0) >= FIRST_LETTER_CODE && value.charCodeAt(0) <= LAST_LETTER_CODE
+}
+
+function letterOffset(letter: string): number {
+  return letter.charCodeAt(0) - FIRST_LETTER_CODE
+}
+
+function inRanges(draw: Draw, letters: LetterRange, numbers: Range): boolean {
+  return isUppercaseLetter(draw.letter)
+    && Number.isSafeInteger(draw.number)
+    && draw.letter >= letters.start
+    && draw.letter <= letters.end
+    && draw.number >= numbers.min
+    && draw.number <= numbers.max
+}
+
+function usedIndices(letters: LetterRange, numbers: Range, used: readonly Draw[]): bigint[] {
+  const width = BigInt(numbers.max) - BigInt(numbers.min) + 1n
+  const startOffset = letterOffset(letters.start)
+  const indices = new Set<bigint>()
+
+  for (const draw of used) {
+    if (!inRanges(draw, letters, numbers)) continue
+    indices.add(BigInt(letterOffset(draw.letter) - startOffset) * width + BigInt(draw.number - numbers.min))
+  }
+
+  return [...indices].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+}
+
+export function remainingCombinationCount(letters: LetterRange, numbers: Range, used: readonly Draw[]): bigint {
+  const width = BigInt(numbers.max) - BigInt(numbers.min) + 1n
+  const letterCount = BigInt(letterOffset(letters.end) - letterOffset(letters.start) + 1)
+  return width * letterCount - BigInt(usedIndices(letters, numbers, used).length)
+}
+
+function cryptoSample64(): bigint {
+  const values = new Uint32Array(2)
+  crypto.getRandomValues(values)
+  return (BigInt(values[0]) << 32n) | BigInt(values[1])
+}
+
+function pickRank(total: bigint, sample64: () => bigint): bigint {
+  const limit = (MAX_SAMPLE_64 / total) * total
+  let sample: bigint
+  do {
+    sample = sample64()
+  } while (sample < 0n || sample >= limit)
+  return sample % total
+}
+
+export function pickAvailablePair(
+  letters: LetterRange,
+  numbers: Range,
+  used: readonly Draw[],
+  sample64 = cryptoSample64,
+): Draw | null {
+  const indices = usedIndices(letters, numbers, used)
+  const width = BigInt(numbers.max) - BigInt(numbers.min) + 1n
+  const total = width * BigInt(letterOffset(letters.end) - letterOffset(letters.start) + 1)
+  const remaining = total - BigInt(indices.length)
+  if (remaining === 0n) return null
+
+  let gridIndex = pickRank(remaining, sample64)
+  for (const usedIndex of indices) {
+    if (usedIndex > gridIndex) break
+    gridIndex += 1n
+  }
+
+  const offset = Number(gridIndex / width)
+  return {
+    letter: String.fromCharCode(letters.start.charCodeAt(0) + offset),
+    number: Number(BigInt(numbers.min) + gridIndex % width),
+  }
 }
 
 function cryptoSample53(): bigint {
