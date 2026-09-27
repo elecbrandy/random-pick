@@ -13,21 +13,35 @@ export function mountPickerApp(root: HTMLElement): void {
   root.innerHTML = `
     <section class="picker" aria-labelledby="page-title">
       <header>
-        <p class="eyebrow">RANDOM PICK</p>
         <h1 id="page-title">랜덤 뽑기</h1>
         <p class="intro">알파벳 한 글자와 원하는 범위의 숫자를 함께 뽑아 보세요.</p>
       </header>
-      <div class="results" aria-label="추첨 결과">
-        <article class="result-card"><p class="result-label">알파벳</p><span class="result-value" data-result="letter">?</span></article>
-        <article class="result-card"><p class="result-label">숫자</p><span class="result-value" data-result="number">?</span></article>
-      </div>
+      <section class="results" aria-label="추첨 결과">
+        <p class="result-label">이번 결과</p>
+        <div class="result-values">
+          <span class="result-value" data-result="letter">?</span>
+          <span class="result-separator" aria-hidden="true">·</span>
+          <span class="result-value" data-result="number">?</span>
+        </div>
+      </section>
       <form class="range-form" novalidate>
-        <div class="field"><label for="letter-start">알파벳 시작</label><select id="letter-start" name="letter-start" aria-describedby="letter-range-error">${letterOptions('A')}</select></div>
-        <div class="field"><label for="letter-end">알파벳 끝</label><select id="letter-end" name="letter-end" aria-describedby="letter-range-error">${letterOptions('Z')}</select></div>
-        <p class="field-error range-error" id="letter-range-error"></p>
-        <div class="field"><label for="min">최솟값</label><input id="min" name="min" type="text" value="1" inputmode="decimal" aria-describedby="min-error" /><p class="field-error" id="min-error"></p></div>
-        <div class="field"><label for="max">최댓값</label><input id="max" name="max" type="text" value="100" inputmode="decimal" aria-describedby="max-error" /><p class="field-error" id="max-error"></p></div>
-        <p class="field-error range-error" id="range-error"></p>
+        <h2 class="range-form-title">범위 설정</h2>
+        <fieldset class="range-group">
+          <legend>알파벳 범위</legend>
+          <div class="range-fields">
+            <div class="field"><label for="letter-start">시작</label><select id="letter-start" name="letter-start" aria-describedby="letter-range-error">${letterOptions('A')}</select></div>
+            <div class="field"><label for="letter-end">끝</label><select id="letter-end" name="letter-end" aria-describedby="letter-range-error">${letterOptions('Z')}</select></div>
+          </div>
+          <p class="field-error range-error" id="letter-range-error"></p>
+        </fieldset>
+        <fieldset class="range-group">
+          <legend>숫자 범위</legend>
+          <div class="range-fields">
+            <div class="field"><label for="min">최솟값</label><input id="min" name="min" type="text" value="1" inputmode="decimal" aria-describedby="min-error" /><p class="field-error" id="min-error"></p></div>
+            <div class="field"><label for="max">최댓값</label><input id="max" name="max" type="text" value="100" inputmode="decimal" aria-describedby="max-error" /><p class="field-error" id="max-error"></p></div>
+          </div>
+          <p class="field-error range-error" id="range-error"></p>
+        </fieldset>
         <button type="submit">뽑기</button>
       </form>
       <p class="field-error" data-exhausted aria-live="polite"></p>
