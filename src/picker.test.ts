@@ -108,13 +108,43 @@ describe('letter ranges and available pairs', () => {
     expect(calls).toBe(0)
   })
 
-  it('maps the highest available rank to the final unused grid position', () => {
+  it('picks from the least-used letter before mapping the rank to an unused number', () => {
     expect(pickAvailablePair(
       { start: 'A', end: 'B' },
       { min: 1, max: 2 },
       [{ letter: 'A', number: 1 }],
-      () => 2n,
+      () => 1n,
     )).toEqual({ letter: 'B', number: 2 })
+  })
+
+  it('keeps letter counts balanced while never repeating a pair', () => {
+    const letters = { start: 'A', end: 'C' }
+    const numbers = { min: 1, max: 2 }
+    const used: { letter: string; number: number }[] = []
+
+    for (let index = 0; index < 6; index++) {
+      const draw = pickAvailablePair(letters, numbers, used, () => 0n)
+      expect(draw).not.toBeNull()
+      used.push(draw!)
+    }
+
+    expect(used).toEqual([
+      { letter: 'A', number: 1 },
+      { letter: 'B', number: 1 },
+      { letter: 'C', number: 1 },
+      { letter: 'A', number: 2 },
+      { letter: 'B', number: 2 },
+      { letter: 'C', number: 2 },
+    ])
+  })
+
+  it('skips used numbers within the least-used letter', () => {
+    expect(pickAvailablePair(
+      { start: 'A', end: 'B' },
+      { min: 1, max: 3 },
+      [{ letter: 'A', number: 1 }, { letter: 'A', number: 3 }, { letter: 'B', number: 1 }],
+      () => 1n,
+    )).toEqual({ letter: 'B', number: 3 })
   })
 
   it('rejects a 64-bit sample in the modulo bias tail before selecting a pair', () => {

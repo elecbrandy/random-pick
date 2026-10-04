@@ -122,16 +122,28 @@ export function pickAvailablePair(
   const remaining = total - BigInt(indices.length)
   if (remaining === 0n) return null
 
-  let gridIndex = pickRank(remaining, sample64)
+  const usedCounts = Array.from({ length: letterOffset(letters.end) - letterOffset(letters.start) + 1 }, () => 0)
   for (const usedIndex of indices) {
-    if (usedIndex > gridIndex) break
-    gridIndex += 1n
+    usedCounts[Number(usedIndex / width)]++
   }
 
-  const offset = Number(gridIndex / width)
+  const leastUsed = Math.min(...usedCounts.filter((count) => BigInt(count) < width))
+  const eligibleOffsets = usedCounts.flatMap((count, offset) => count === leastUsed ? [offset] : [])
+  const availablePerLetter = width - BigInt(leastUsed)
+  const rank = pickRank(BigInt(eligibleOffsets.length) * availablePerLetter, sample64)
+  const offset = eligibleOffsets[Number(rank / availablePerLetter)]
+  const letterStartIndex = BigInt(offset) * width
+  let numberIndex = rank % availablePerLetter
+
+  for (const usedIndex of indices) {
+    if (usedIndex < letterStartIndex) continue
+    if (usedIndex >= letterStartIndex + width || usedIndex - letterStartIndex > numberIndex) break
+    numberIndex += 1n
+  }
+
   return {
     letter: String.fromCharCode(letters.start.charCodeAt(0) + offset),
-    number: Number(BigInt(numbers.min) + gridIndex % width),
+    number: Number(BigInt(numbers.min) + numberIndex),
   }
 }
 
